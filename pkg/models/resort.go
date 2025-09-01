@@ -30,6 +30,7 @@ type Resort struct {
 	Certificates    types.NullRawMessage `db:"certificates"`
 	AddressList     types.NullRawMessage `db:"address_list"`
 	Rooms           types.NullRawMessage `db:"rooms"`
+	TaskId          null.String          `db:"task_id"`
 	CreatedAt       time.Time            `db:"created_at"`
 	UpdatedAt       time.Time            `db:"updated_at"`
 	DeletedAt       null.Time            `db:"deleted_at"`

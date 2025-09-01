@@ -25,6 +25,7 @@ type Changes struct {
 	CreatedAt           time.Time   `db:"created_at"`
 	UpdatedAt           time.Time   `db:"updated_at"`
 	GeoProcessingStatus null.String `db:"geo_processing_status"` // Если NULL значит вообще не обрабатывался
+	TaskId              null.String `db:"task_id"`
 	Handled             bool
 	Outdated            bool
 }

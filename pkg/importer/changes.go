@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/guregu/null"
+
 	"github.com/EveryHotel/core-tools/pkg/types"
 	"github.com/EveryHotel/fsa-gov/pkg/api/service"
 	"github.com/EveryHotel/fsa-gov/pkg/models"
@@ -13,7 +15,7 @@ import (
 )
 
 type ChangesImporter interface {
-	Import(context.Context, string, int64) error
+	Import(context.Context, string, int64, string) error
 }
 
 type changesImporter struct {
@@ -32,7 +34,7 @@ func NewChangesImporter(
 }
 
 // Import импорт средств размещения
-func (s *changesImporter) Import(ctx context.Context, date string, batchSize int64) error {
+func (s *changesImporter) Import(ctx context.Context, date string, batchSize int64, taskId string) error {
 	slog.InfoContext(ctx, "changes import: was started")
 
 	defer func() {
@@ -55,7 +57,7 @@ func (s *changesImporter) Import(ctx context.Context, date string, batchSize int
 	for i, code := range append(changes.Closed, changes.Changes...) {
 		batch = append(batch, code)
 		if int64(len(batch)) >= batchSize {
-			if err = s.importBatch(ctx, batch); err != nil {
+			if err = s.importBatch(ctx, batch, taskId); err != nil {
 				slog.WarnContext(ctx, fmt.Sprintf("changes import: import batch %d", i),
 					slog.Any("error", err),
 				)
@@ -65,7 +67,7 @@ func (s *changesImporter) Import(ctx context.Context, date string, batchSize int
 	}
 
 	if len(batch) > 0 {
-		if err = s.importBatch(ctx, batch); err != nil {
+		if err = s.importBatch(ctx, batch, taskId); err != nil {
 			slog.WarnContext(ctx, "changes import: import last batch",
 				slog.Any("error", err),
 			)
@@ -77,7 +79,7 @@ func (s *changesImporter) Import(ctx context.Context, date string, batchSize int
 }
 
 // importBatch импорт пачки изменений
-func (s *changesImporter) importBatch(ctx context.Context, codes []string) error {
+func (s *changesImporter) importBatch(ctx context.Context, codes []string, taskId string) error {
 	dbChanges, err := s.repo.GetMappedEntities(ctx, map[string]any{
 		repos.ChangesAlias + ".code": codes,
 	}, func(item models.Changes) string {
@@ -98,6 +100,7 @@ func (s *changesImporter) importBatch(ctx context.Context, codes []string) error
 		dbChange.Status = models.ChangesStatusNeedUpdate
 		dbChange.LastAppearance = time.Now()
 		dbChange.Outdated = true
+		dbChange.TaskId = null.StringFrom(taskId)
 
 		dbChanges[code] = dbChange
 	}

@@ -15,7 +15,7 @@ import (
 )
 
 type ResortImporter interface {
-	Import(context.Context, int64) error
+	Import(context.Context, int64, string) (int64, error)
 }
 
 type resortImporter struct {
@@ -37,7 +37,7 @@ func NewResortImporter(
 }
 
 // Import импорт средств размещения
-func (s *resortImporter) Import(ctx context.Context, batchSize int64) error {
+func (s *resortImporter) Import(ctx context.Context, batchSize int64, taskId string) (updated int64, err error) {
 	slog.InfoContext(ctx, "resort import: was started")
 
 	defer func() {
@@ -49,7 +49,6 @@ func (s *resortImporter) Import(ctx context.Context, batchSize int64) error {
 	var (
 		changes map[string]models.Changes
 		lastId  int64
-		err     error
 	)
 
 	// Выбираем из базы batchSize элементов Changes (которые не в статусе finished)
@@ -62,25 +61,28 @@ func (s *resortImporter) Import(ctx context.Context, batchSize int64) error {
 
 		changes, lastId, err = s.changesRepo.ListForImport(ctx, uint(batchSize), lastId)
 		if err != nil {
-			return fmt.Errorf("list changes for import: %w", err)
+			return updated, fmt.Errorf("list changes for import: %w", err)
 		}
 
 		if len(changes) == 0 {
 			break
 		}
 
-		if err = s.importResorts(ctx, changes); err != nil {
+		batchUpdated, err := s.importResorts(ctx, changes, taskId)
+		if err != nil {
 			slog.ErrorContext(ctx, "import resorts",
 				slog.Any("error", err),
 			)
 		}
+
+		updated += batchUpdated
 	}
 
-	return nil
+	return updated, nil
 }
 
 // importResorts импорт пачки средств размещения
-func (s *resortImporter) importResorts(ctx context.Context, changes map[string]models.Changes) error {
+func (s *resortImporter) importResorts(ctx context.Context, changes map[string]models.Changes, taskId string) (updated int64, err error) {
 	codes := make([]string, 0, len(changes))
 	for code := range changes {
 		codes = append(codes, code)
@@ -92,7 +94,7 @@ func (s *resortImporter) importResorts(ctx context.Context, changes map[string]m
 		return item.Code
 	})
 	if err != nil {
-		return fmt.Errorf("get db resorts: %w", err)
+		return updated, fmt.Errorf("get db resorts: %w", err)
 	}
 
 	for code, change := range changes {
@@ -100,6 +102,8 @@ func (s *resortImporter) importResorts(ctx context.Context, changes map[string]m
 		if _, ok := dbResorts[code]; ok {
 			dbResort = dbResorts[code]
 		}
+
+		dbResort.TaskId = null.StringFrom(taskId)
 
 		if err = s.updateResort(ctx, change, &dbResort); err != nil {
 			change.LastError = null.StringFrom(fmt.Sprintf("update resort: %s", err))
@@ -109,6 +113,7 @@ func (s *resortImporter) importResorts(ctx context.Context, changes map[string]m
 			change.Status = models.ChangesStatusFinished
 			change.LastUpdated = null.TimeFrom(time.Now())
 			change.LastError = null.String{}
+			updated += 1
 		}
 
 		changes[code] = change
@@ -120,10 +125,10 @@ func (s *resortImporter) importResorts(ctx context.Context, changes map[string]m
 	}
 
 	if err = s.changesRepo.UpdateMultiple(ctx, forUpdateChanges); err != nil {
-		return fmt.Errorf("update multiple changes: %w", err)
+		return updated, fmt.Errorf("update multiple changes: %w", err)
 	}
 
-	return nil
+	return updated, nil
 }
 
 // updateResort обновляет одно средство размещения
