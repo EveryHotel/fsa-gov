@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/guregu/null"
@@ -14,25 +15,30 @@ import (
 	"github.com/EveryHotel/fsa-gov/pkg/transformer"
 )
 
+type NameNormalizer func(string) (string, bool)
+
 type ResortImporter interface {
 	Import(context.Context, int64, string) (int64, error)
 }
 
 type resortImporter struct {
-	api         service.ApiService
-	resortRepo  repos.ResortRepo
-	changesRepo repos.ChangesRepo
+	api             service.ApiService
+	resortRepo      repos.ResortRepo
+	changesRepo     repos.ChangesRepo
+	nameNormalizers []NameNormalizer
 }
 
 func NewResortImporter(
 	api service.ApiService,
 	resortRepo repos.ResortRepo,
 	changesRepo repos.ChangesRepo,
+	nameNormalizers []NameNormalizer,
 ) ResortImporter {
 	return &resortImporter{
-		api:         api,
-		resortRepo:  resortRepo,
-		changesRepo: changesRepo,
+		api:             api,
+		resortRepo:      resortRepo,
+		changesRepo:     changesRepo,
+		nameNormalizers: nameNormalizers,
 	}
 }
 
@@ -144,6 +150,8 @@ func (s *resortImporter) updateResort(ctx context.Context, dbChange models.Chang
 		return fmt.Errorf("transform resort: %w", err)
 	}
 
+	s.normalizeName(dbResort)
+
 	if err = s.saveResort(ctx, *dbResort); err != nil {
 		return fmt.Errorf("save resort: %w", err)
 	}
@@ -168,4 +176,25 @@ func (s *resortImporter) saveResort(
 	}
 
 	return nil
+}
+
+// normalizeName обрабатывает название заданными нормализаторами
+func (s *resortImporter) normalizeName(
+	dbResort *models.Resort,
+) {
+	// по-умолчания устанавливаем полное имя
+	dbResort.NormalizedName = null.StringFrom(dbResort.FullName)
+	dbResort.IsNormalizedName = false
+
+	for _, n := range s.nameNormalizers {
+		normalizedName, isNormalized := n(dbResort.NormalizedName.String)
+		if isNormalized {
+			dbResort.NormalizedName = null.StringFrom(normalizedName)
+			dbResort.IsNormalizedName = true
+		}
+	}
+
+	dbResort.NormalizedName = null.StringFrom(
+		strings.TrimSpace(dbResort.NormalizedName.String),
+	)
 }

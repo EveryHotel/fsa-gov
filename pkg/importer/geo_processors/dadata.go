@@ -15,7 +15,7 @@ import (
 	"github.com/ekomobile/dadata/v2/client"
 )
 
-const ProcessorNameDadata = "dadata"
+const GeoProcessorNameDadata = "dadata"
 
 type dadataProcessor struct {
 	client *clean.Api
@@ -34,7 +34,7 @@ func NewDadataProcessor(
 }
 
 func (p *dadataProcessor) GetName() string {
-	return ProcessorNameDadata
+	return GeoProcessorNameDadata
 }
 
 func (p *dadataProcessor) Process(ctx context.Context, address string) (city string, latitude float64, longitude float64, data json.RawMessage, err error) {

@@ -186,7 +186,7 @@ func (s *geoImporter) updateGeo(ctx context.Context, dbResort *models.Resort) er
 
 	// И если все хорошо
 	dbResort.CityName = null.NewString(cityName, cityName != "")
-	if latitude > 0 && longitude > 0 {
+	if latitude != 0 && longitude != 0 {
 		dbResort.Coords = pgtype.Point{
 			P: pgtype.Vec2{
 				Y: latitude,

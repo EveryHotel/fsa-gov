@@ -39,4 +39,7 @@ type Resort struct {
 	GeoProcessorData types.NullRawMessage `db:"geo_processor_data"`
 	CityName         null.String          `db:"city_name"`
 	Coords           pgtype.Point         `db:"coords"`
+	// Рассчитывается при импорте - очищенное от грязи FullName
+	NormalizedName   null.String `db:"normalized_name"`
+	IsNormalizedName bool        `db:"is_normalized_name"`
 }
