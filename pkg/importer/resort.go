@@ -2,12 +2,14 @@ package importer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/guregu/null"
+	"github.com/jackc/pgx/v4"
 
 	"github.com/EveryHotel/fsa-gov/pkg/api/service"
 	"github.com/EveryHotel/fsa-gov/pkg/models"
@@ -19,6 +21,7 @@ type NameNormalizer func(string) (string, bool)
 
 type ResortImporter interface {
 	Import(context.Context, int64, string) (int64, error)
+	ImportOne(context.Context, string, string) error
 }
 
 type resortImporter struct {
@@ -85,6 +88,66 @@ func (s *resortImporter) Import(ctx context.Context, batchSize int64, taskId str
 	}
 
 	return updated, nil
+}
+
+// ImportOne импорт одного средства размещения
+func (s *resortImporter) ImportOne(ctx context.Context, code string, taskId string) error {
+	slog.InfoContext(ctx, "resort import one: was started")
+
+	defer func() {
+		slog.InfoContext(ctx,
+			fmt.Sprintf("resort import one: was finished"),
+		)
+	}()
+
+	change, err := s.changesRepo.GetOneBy(ctx, map[string]interface{}{
+		repos.ChangesAlias + ".code": code,
+	})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("get db change by code %s: %w", code, err)
+	}
+
+	dbResort, err := s.resortRepo.GetOneBy(ctx, map[string]any{
+		repos.ResortAlias + ".code": code,
+	})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("get db resort by code %s: %w", code, err)
+	}
+
+	if change.Id == 0 {
+		change = models.Changes{
+			Code:           code,
+			Status:         models.ChangesStatusNeedUpdate,
+			LastAppearance: time.Now(),
+			TaskId:         null.StringFrom(taskId),
+		}
+	}
+
+	change.TaskId = null.StringFrom(taskId)
+	dbResort.TaskId = null.StringFrom(taskId)
+
+	if err = s.updateResort(ctx, change, &dbResort); err != nil {
+		change.LastError = null.StringFrom(fmt.Sprintf("update resort: %s", err))
+		change.Status = models.ChangesStatusError
+		change.LastError = null.StringFrom(err.Error())
+	} else {
+		change.Status = models.ChangesStatusFinished
+		change.LastUpdated = null.TimeFrom(time.Now())
+		change.LastError = null.String{}
+	}
+
+	if change.Id == 0 {
+		change.Id, err = s.changesRepo.Create(ctx, change)
+		if err != nil {
+			return fmt.Errorf("create change %s: %w", code, err)
+		}
+	} else {
+		if err = s.changesRepo.Update(ctx, change); err != nil {
+			return fmt.Errorf("update change %s: %w", code, err)
+		}
+	}
+
+	return nil
 }
 
 // importResorts импорт пачки средств размещения

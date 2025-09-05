@@ -39,7 +39,7 @@ func (c apiClient) MakeRequest(ctx context.Context, method string, url string, p
 
 	body, _ := io.ReadAll(httpResponse.Body)
 
-	if httpResponse.StatusCode >= 500 && httpResponse.StatusCode < 600 {
+	if httpResponse.StatusCode >= 400 && httpResponse.StatusCode < 600 {
 		return nil, fmt.Errorf("response status code: %d", httpResponse.StatusCode)
 	}
 
