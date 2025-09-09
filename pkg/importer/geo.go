@@ -23,6 +23,7 @@ type GeoProcessor interface {
 
 type GeoImporter interface {
 	Import(context.Context, int64) error
+	ImportOne(context.Context, string) error
 }
 
 type geoImporter struct {
@@ -94,6 +95,35 @@ func (s *geoImporter) Import(ctx context.Context, batchSize int64) error {
 			slog.ErrorContext(ctx, "import geo: all batch items were failed")
 			break
 		}
+	}
+
+	return nil
+}
+
+// ImportOne импорт geo данных для одного средства размещения
+func (s *geoImporter) ImportOne(ctx context.Context, code string) error {
+	slog.InfoContext(ctx, "geo import one: was started")
+
+	defer func() {
+		slog.InfoContext(ctx,
+			fmt.Sprintf("geo import one: was finished"),
+		)
+	}()
+
+	change, err := s.changesRepo.GetOneBy(ctx, map[string]any{
+		repos.ChangesAlias + ".code": code,
+	})
+	if err != nil {
+		return fmt.Errorf("get one change for geo import: %w", err)
+	}
+
+	_, err = s.importGeo(ctx, map[string]models.Changes{
+		code: change,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "import geo",
+			slog.Any("error", err),
+		)
 	}
 
 	return nil
