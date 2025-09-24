@@ -3,6 +3,7 @@ package importer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -15,6 +16,8 @@ import (
 	"github.com/EveryHotel/fsa-gov/pkg/models"
 	"github.com/EveryHotel/fsa-gov/pkg/repos"
 )
+
+var EmptyAddressListErr = errors.New("empty address list")
 
 type GeoProcessor interface {
 	GetName() string
@@ -157,7 +160,10 @@ func (s *geoImporter) importGeo(ctx context.Context, changes map[string]models.C
 				slog.Any("error", err),
 			)
 			change.GeoProcessingStatus = null.StringFrom(models.ChangesGeoProcessingStatusError)
-			errCnt++
+			// Если вдруг в fsa не было адреса, не считаем это за критикал
+			if !errors.Is(err, EmptyAddressListErr) {
+				errCnt++
+			}
 		} else {
 			change.GeoProcessingStatus = null.StringFrom(models.ChangesGeoProcessingStatusFinished)
 		}
@@ -180,7 +186,7 @@ func (s *geoImporter) importGeo(ctx context.Context, changes map[string]models.C
 // updateGeo обновляет одно средство размещения
 func (s *geoImporter) updateGeo(ctx context.Context, dbResort *models.Resort) error {
 	if !dbResort.AddressList.Valid {
-		return fmt.Errorf("address list is empty")
+		return EmptyAddressListErr
 	}
 
 	var addressList []dto.NamedStringItem
@@ -189,7 +195,7 @@ func (s *geoImporter) updateGeo(ctx context.Context, dbResort *models.Resort) er
 	}
 
 	if len(addressList) == 0 {
-		return fmt.Errorf("invalid address list")
+		return EmptyAddressListErr
 	}
 
 	// сохраняем наименование процессора которым обрабатывали гео данные
